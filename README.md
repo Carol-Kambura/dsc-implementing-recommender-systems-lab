@@ -39,7 +39,7 @@ df.info()
 
 ```python
 # Drop unnecessary columns
-new_df = None
+new_df = df.drop(columns='timestamp')
 ```
 
 It's now time to transform the dataset into something compatible with `surprise`. In order to do this, you're going to need `Reader` and `Dataset` classes. There's a method in `Dataset` specifically for loading dataframes.
@@ -47,7 +47,8 @@ It's now time to transform the dataset into something compatible with `surprise`
 
 ```python
 from surprise import Reader, Dataset
-# read in values as Surprise dataset 
+reader = Reader()
+data = Dataset.load_from_df(new_df,reader)
 
 
 ```
@@ -84,12 +85,17 @@ import numpy as np
 ```python
 ## Perform a gridsearch with SVD
 # ⏰ This cell may take several minutes to run
-
+params = {'n_factors': [20, 50, 100],
+         'reg_all': [0.02, 0.05, 0.1]}
+g_s_svd = GridSearchCV(SVD,param_grid=params,n_jobs=-1)
+g_s_svd.fit(data)
 ```
 
 
 ```python
 # print out optimal parameters for SVD after GridSearch
+print(g_s_svd.best_score)
+print(g_s_svd.best_params)
 ```
 
     {'rmse': 0.8689250510051669, 'mae': 0.6679404366294037}
@@ -99,12 +105,17 @@ import numpy as np
 
 ```python
 # cross validating with KNNBasic
-
+knn_basic = KNNBasic(sim_options={'name':'pearson', 'user_based':True})
+cv_knn_basic = cross_validate(knn_basic, data, n_jobs=-1)
 ```
 
 
 ```python
 # print out the average RMSE score for the test set
+for i in cv_knn_basic.items():
+    print(i)
+print('-----------------------')
+print(np.mean(cv_knn_basic['test_rmse']))
 ```
 
     ('test_rmse', array([0.97646619, 0.97270627, 0.97874535, 0.97029184, 0.96776748]))
@@ -118,6 +129,8 @@ import numpy as np
 
 ```python
 # cross validating with KNNBaseline
+knn_baseline = KNNBaseline(sim_options={'name':'pearson', 'user_based':True})
+cv_knn_baseline = cross_validate(knn_baseline,data)
 
 ```
 
@@ -141,6 +154,10 @@ import numpy as np
 
 ```python
 # print out the average score for the test set
+for i in cv_knn_baseline.items():
+    print(i)
+
+np.mean(cv_knn_baseline['test_rmse'])
 
 ```
 
@@ -284,13 +301,28 @@ The function returns:
 
 ```python
 def movie_rater(movie_df,num, genre=None):
-    pass
-        
+    userID = 1000
+    rating_list = []
+    while num > 0:
+        if genre:
+            movie = movie_df[movie_df['genres'].str.contains(genre)].sample(1)
+        else:
+            movie = movie_df.sample(1)
+        print(movie)
+        rating = input('How do you rate this movie on a scale of 1-5, press n if you have not seen :\n')
+        if rating == 'n':
+            continue
+        else:
+            rating_one_movie = {'userId':userID,'movieId':movie['movieId'].values[0],'rating':rating}
+            rating_list.append(rating_one_movie) 
+            num -= 1
+    return rating_list
 ```
 
 
 ```python
 # try out the new function here!
+user_rating = movie_rater(df_movies, 4, 'Comedy')
 ```
 
           movieId                   title          genres
@@ -339,15 +371,16 @@ Now that you have new ratings, you can use them to make predictions for this new
 
 
 ```python
-## add the new ratings to the original ratings DataFrame
-
+# train a model using the new combined DataFrame
+svd_ = SVD(n_factors= 50, reg_all=0.05)
+svd_.fit(new_data.build_full_trainset())
 ```
 
 
 ```python
 # train a model using the new combined DataFrame
-
-```
+svd_ = SVD(n_factors= 50, reg_all=0.05)
+svd_.fit(new_data.build_full_trainset())
 
 
 
@@ -360,14 +393,17 @@ Now that you have new ratings, you can use them to make predictions for this new
 ```python
 # make predictions for the user
 # you'll probably want to create a list of tuples in the format (movie_id, predicted_score)
+list_of_movies = []
+for m_id in new_df['movieId'].unique():
+    list_of_movies.append( (m_id,svd_.predict(1000,m_id)[3]))
 
 ```
 
 
 ```python
 # order the predictions from highest to lowest rated
+ranked_movies = sorted(list_of_movies, key=lambda x:x[1], reverse=True)
 
-ranked_movies = None
 ```
 
  For the final component of this challenge, it could be useful to create a function `recommended_movies()` that takes in the parameters:
@@ -380,8 +416,14 @@ The function should use a `for` loop to print out each recommended *n* movies in
 
 ```python
 # return the top n recommendations using the 
+# return the top n recommendations using the 
 def recommended_movies(user_ratings,movie_title_df,n):
-        pass
+        for idx, rec in enumerate(user_ratings):
+            title = movie_title_df.loc[movie_title_df['movieId'] == int(rec[0])]['title']
+            print('Recommendation # ', idx+1, ': ', title, '\n')
+            n-= 1
+            if n == 0:
+                break
             
 recommended_movies(ranked_movies,df_movies,5)
 ```
